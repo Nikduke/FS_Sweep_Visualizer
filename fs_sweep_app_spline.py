@@ -182,7 +182,7 @@ def apply_common_layout(fig: go.Figure, plot_height: int, y_title: str, legend_o
             entrywidthmode="pixels",
         ),
     )
-    fig.update_xaxes(title_text="Harmonic number n = f / f_base", tick0=1, dtick=1)
+    fig.update_xaxes(title_text="Harmonic number n = f / f_fund", tick0=1, dtick=1)
     fig.update_yaxes(title_text=y_title)
 
 
