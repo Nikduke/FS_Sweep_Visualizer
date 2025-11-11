@@ -272,7 +272,7 @@ def main():
         "toImageButtonOptions": {
             "format": "png",
             "filename": "plot",
-            "scale": 2,
+            "scale": 3,
         }
     }
 
