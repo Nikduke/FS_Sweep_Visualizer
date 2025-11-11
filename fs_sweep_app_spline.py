@@ -18,7 +18,7 @@ def _inject_bold_tick_css():
         <style>
         .plotly .xtick text, .plotly .ytick text,
         .plotly .scene .xtick text, .plotly .scene .ytick text {
-            font-weight: 700 !important;
+            font-weight: 800 !important;
         }
         </style>
         """,
@@ -272,7 +272,7 @@ def main():
         "toImageButtonOptions": {
             "format": "png",
             "filename": "plot",
-            "scale": 3,
+            "scale": 4,
         }
     }
 
