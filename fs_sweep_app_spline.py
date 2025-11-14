@@ -18,7 +18,7 @@ def _inject_bold_tick_css():
         <style>
         .plotly .xtick text, .plotly .ytick text,
         .plotly .scene .xtick text, .plotly .scene .ytick text {
-            font-weight: 800 !important;
+            font-weight: 700 !important;
         }
         </style>
         """,
@@ -62,29 +62,52 @@ def list_case_columns(df: Optional[pd.DataFrame]) -> List[str]:
     return [c for c in df.columns if c != "Frequency (Hz)"]
 
 
-def split_case_parts(cases: List[str]) -> Tuple[List[List[str]], int]:
-    parts_list: List[List[str]] = []
+def split_case_location(name: str) -> Tuple[str, Optional[str]]:
+    if "__" in str(name):
+        base, loc = str(name).split("__", 1)
+        loc = loc if loc else None
+        return base, loc
+    return str(name), None
+
+
+def display_case_name(name: str) -> str:
+    base, _ = split_case_location(name)
+    return base
+
+
+def split_case_parts(cases: List[str]) -> Tuple[List[List[str]], List[str]]:
+    if not cases:
+        return [], []
+    temp_parts: List[Tuple[List[str], str]] = []
     max_parts = 0
     for name in cases:
-        parts = str(name).split("_")
-        parts_list.append(parts)
-        max_parts = max(max_parts, len(parts))
-    for parts in parts_list:
-        if len(parts) < max_parts:
-            parts.extend([""] * (max_parts - len(parts)))
-    return parts_list, max_parts
+        base_name, location = split_case_location(name)
+        base_parts = str(base_name).split("_")
+        max_parts = max(max_parts, len(base_parts))
+        temp_parts.append((base_parts, location or ""))
+    normalized: List[List[str]] = []
+    for base_parts, location in temp_parts:
+        padded = list(base_parts)
+        if len(padded) < max_parts:
+            padded.extend([""] * (max_parts - len(padded)))
+        padded.append(location or "")
+        normalized.append(padded)
+    labels = [f"Case part {i+1}" for i in range(max_parts)] + ["Location"]
+    return normalized, labels
 
 
 def build_filters_for_case_parts(all_cases: List[str]) -> List[str]:
     st.sidebar.header("Case Filters")
     if not all_cases:
         return []
-    parts_list, max_parts = split_case_parts(all_cases)
+    parts_matrix, part_labels = split_case_parts(all_cases)
+    if not part_labels:
+        return all_cases
     keep = np.ones(len(all_cases), dtype=bool)
     reset_clicked = st.sidebar.button("Reset filters", key="reset_case_filters", help="Select all values in all Case parts")
-    for i in range(max_parts):
-        col_key = f"case_part_{i+1}_ms"
-        options = sorted({parts_list[j][i] for j in range(len(all_cases))})
+    for idx, label in enumerate(part_labels):
+        col_key = f"case_part_{idx+1}_ms"
+        options = sorted({parts_matrix[j][idx] for j in range(len(all_cases))})
         options_disp = [o if o != "" else "<empty>" for o in options]
         # init/sanitize
         if reset_clicked:
@@ -93,7 +116,7 @@ def build_filters_for_case_parts(all_cases: List[str]) -> List[str]:
             st.session_state[col_key] = list(options_disp)
         else:
             st.session_state[col_key] = [v for v in st.session_state[col_key] if v in options_disp] or list(options_disp)
-        st.sidebar.markdown(f"Case part {i+1}")
+        st.sidebar.markdown(label)
         c1, c2 = st.sidebar.columns([1, 1])
         if c1.button("Select all", key=f"{col_key}_all"):
             st.session_state[col_key] = list(options_disp)
@@ -104,7 +127,7 @@ def build_filters_for_case_parts(all_cases: List[str]) -> List[str]:
         )
         selected_raw = ["" if s == "<empty>" else s for s in selected_disp]
         if 0 < len(selected_raw) < len(options):
-            mask_i = np.array([parts_list[j][i] in selected_raw for j in range(len(all_cases))])
+            mask_i = np.array([parts_matrix[j][idx] in selected_raw for j in range(len(all_cases))])
             keep &= mask_i
         if len(selected_raw) == 0:
             keep &= False
@@ -152,16 +175,19 @@ def make_spline_traces(df: pd.DataFrame, cases: List[str], f_base: float, y_titl
             continue
         y = pd.to_numeric(df[case], errors="coerce")
         cd = np.column_stack([f.values])
+        display_name, location = split_case_location(case)
+        hover_label = display_name if not location else f"{display_name} ({location})"
         traces.append(
             go.Scatter(
                 x=n,
                 y=y,
                 customdata=cd,
                 mode="lines",
-                name=str(case),
+                name=display_name,
                 line=dict(shape="spline", smoothing=float(smooth)),
                 hovertemplate=(
-                    "Case=%{fullData.name}<br>n=%{x:.3f}<br>f=%{customdata[0]:.1f} Hz" + f"<br>{y_title}=%{{y}}<extra></extra>"
+                    f"Case={hover_label}<br>n=%{{x:.3f}}<br>f=%{{customdata[0]:.1f}} Hz"
+                    + f"<br>{y_title}=%{{y}}<extra></extra>"
                 ),
             )
         )
@@ -181,9 +207,12 @@ def apply_common_layout(fig: go.Figure, plot_height: int, y_title: str, legend_o
             entrywidth=int(legend_entrywidth),
             entrywidthmode="pixels",
         ),
+        font=dict(size=14, color="#2b2b2b"),
     )
-    fig.update_xaxes(title_text="Harmonic number n = f / f_fund", tick0=1, dtick=1)
-    fig.update_yaxes(title_text=y_title)
+    fig.update_xaxes(title_text="Harmonic number n = f / f_base", tick0=1, dtick=1,
+                     title_font=dict(size=16, color="#2b2b2b"), tickfont=dict(size=14, color="#2b2b2b"))
+    fig.update_yaxes(title_text=y_title,
+                     title_font=dict(size=16, color="#2b2b2b"), tickfont=dict(size=14, color="#2b2b2b"))
 
 
 def build_plot_spline(df: Optional[pd.DataFrame], cases: List[str], f_base: float, plot_height: int, y_title: str,
@@ -216,16 +245,18 @@ def build_x_over_r_spline(df_r: Optional[pd.DataFrame], df_x: Optional[pd.DataFr
             xr_dropped += int((~denom_ok | r.isna() | x.isna()).sum())
             xr_total += int(len(r))
             cd = np.column_stack([f_series.values])
+            display_name, location = split_case_location(case)
+            hover_label = display_name if not location else f"{display_name} ({location})"
             fig.add_trace(
                 go.Scatter(
                     x=n,
                     y=y,
                     customdata=cd,
                     mode="lines",
-                    name=str(case),
+                    name=display_name,
                     line=dict(shape="spline", smoothing=float(smooth)),
                     hovertemplate=(
-                        "Case=%{fullData.name}<br>n=%{x:.3f}<br>f=%{customdata[0]:.1f} Hz<br>X/R=%{y}<extra></extra>"
+                        f"Case={hover_label}<br>n=%{{x:.3f}}<br>f=%{{customdata[0]:.1f}} Hz<br>X/R=%{{y}}<extra></extra>"
                     ),
                 )
             )
